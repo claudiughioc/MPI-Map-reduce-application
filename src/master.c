@@ -60,12 +60,13 @@ static int init()
 // Execute the mapper code
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
-    int rank, size, block_size;
+    int rank, size, block_size, *errcodes;
     MPI_File mapper_file;
     char *buff;
     MPI_Status status;
     MPI_Datatype arraytype;
     MPI_Offset disp;
+    MPI_Comm reducercomm;
 
     // Save the arguments
     strcpy(in_file, argv[1]);
@@ -75,6 +76,8 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
     block_size = in_file_size / mappers;
+    disp = rank * sizeof(char) * block_size;
+    // Add some chars for the last mapper, if needed
     if (rank == (size - 1) && (block_size % mappers))
         block_size = block_size + in_file_size % mappers;
     buff = (char *)malloc(block_size * sizeof(char));
@@ -86,8 +89,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 
     // Open input file and set the view
     MPI_File_open(MPI_COMM_WORLD, in_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &mapper_file);
-
-    disp = rank * sizeof(char) * block_size;
     MPI_Type_contiguous(block_size, MPI_CHAR, &arraytype);
     MPI_Type_commit(&arraytype);
     MPI_File_set_view(mapper_file, disp, MPI_CHAR, arraytype, "native", MPI_INFO_NULL);
@@ -95,9 +96,13 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Read the designated part of the input file
     MPI_File_read(mapper_file, buff, block_size, MPI_CHAR, &status);
     MPI_File_close(&mapper_file);
-    printf("M %d read %s\n", rank, buff);
+    //printf("M %d read %s\n", rank, buff);
 
     // Create the reducers
+    int my_reducers;
+    MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
+    errcodes = (int *)malloc(my_reducers * sizeof(int));
+    MPI_Comm_spawn( "./reducer", MPI_ARGV_NULL, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &reducercomm, errcodes );
     return 0;
 }
 
@@ -105,7 +110,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 static int execute_master()
 {
     MPI_Comm intercomm;
-    int rank, size;
+    int rank, size, i;
     char bytes[100], c[2];
 
     if (init())
@@ -126,14 +131,18 @@ static int execute_master()
     args[1] = c;
     args[2] = bytes;
 
-
-
     // Create the mappers processes
     MPI_Comm_spawn( "./master", args, mappers, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &intercomm, errcodes );
 
     MPI_Comm_rank(intercomm, &rank);
     MPI_Comm_size(intercomm, &size);
     printf("P rank si size in intercom %d %d\n", rank, size);
+
+    // Send the number of reducers for each mapper
+    for (i = 0; i < mappers; i++) {
+        printf("Master send to M %d, reducers %d\n", i, reducers[i]);
+        MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
+    }
     return 0;
 }
 
