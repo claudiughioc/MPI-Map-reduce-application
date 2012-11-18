@@ -60,13 +60,18 @@ static int init()
 // Execute the mapper code
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
-    int rank, size, block_size, *errcodes;
+    int rank, size, block_size, *errcodes, my_reducers;
+    int i, their_work;
     MPI_File mapper_file;
     char *buff;
     MPI_Status status;
     MPI_Datatype arraytype;
     MPI_Offset disp;
     MPI_Comm reducercomm;
+    char **args = (char **)malloc(3 * sizeof(char *));
+    char reducers_array[10];
+    char block_size_array[10];
+    char source_array[10];
 
     // Save the arguments
     strcpy(in_file, argv[1]);
@@ -98,11 +103,30 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_File_close(&mapper_file);
     //printf("M %d read %s\n", rank, buff);
 
-    // Create the reducers
-    int my_reducers;
+    // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
-    MPI_Comm_spawn( "./reducer", MPI_ARGV_NULL, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &reducercomm, errcodes );
+    
+    //Build reducer arguments
+    number_as_chars(block_size, block_size_array);
+    number_as_chars(my_reducers, reducers_array);
+    number_as_chars(rank, source_array);
+    args[0] = block_size_array;
+    args[1] = reducers_array;
+    args[2] = source_array;
+    printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
+    MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, rank, MPI_COMM_WORLD, &reducercomm, errcodes );
+
+    // Send data to the reducers
+    printf("Mapper %d, size %d\n", rank, size);
+    their_work = block_size / my_reducers;
+    char test_buf[20] = "qwertyuiopasdfghjkl";
+    for (i = 0; i < my_reducers; i++) {
+        if (i + 1 == my_reducers)
+            their_work += block_size % my_reducers;
+        MPI_Send(&i, 1, MPI_INT, i, 1, reducercomm);
+        
+    }
     return 0;
 }
 
@@ -139,10 +163,8 @@ static int execute_master()
     printf("P rank si size in intercom %d %d\n", rank, size);
 
     // Send the number of reducers for each mapper
-    for (i = 0; i < mappers; i++) {
-        printf("Master send to M %d, reducers %d\n", i, reducers[i]);
+    for (i = 0; i < mappers; i++)
         MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
-    }
     return 0;
 }
 
