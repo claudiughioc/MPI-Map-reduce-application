@@ -24,7 +24,6 @@ int main(int argc, char **argv)
     printf("Reducer %d of %d\n", rank, size);
     block_size = atoi(argv[1]);
     coworkers = atoi(argv[2]);
-    source = atoi(argv[3]);
 
     //Calculate how much I have to process
     my_size = block_size / coworkers;
@@ -32,13 +31,6 @@ int main(int argc, char **argv)
         my_size += block_size % coworkers;
 
     // Now wait for the data from my mapper...
-    char buff[3];
-    int test;
-    //probably must receive from the mapper rank (0 -  4)
-    MPI_Recv(&test, 1, MPI_INT, source, 1, parentcomm, &status);
-    printf("R %d of %d process %d, test %d\n", rank, size, my_size, test);
-
-
 
     MPI_Finalize();
     return 0;

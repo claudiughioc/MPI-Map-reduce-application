@@ -9,5 +9,5 @@ run: build
 	${EXEC} -np 1 ./master
 
 clean:
-	rm -fr master
+	rm -fr master reducer
 

@@ -68,10 +68,9 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Datatype arraytype;
     MPI_Offset disp;
     MPI_Comm reducercomm;
-    char **args = (char **)malloc(3 * sizeof(char *));
+    char **args = (char **)malloc(2 * sizeof(char *));
     char reducers_array[10];
     char block_size_array[10];
-    char source_array[10];
 
     // Save the arguments
     strcpy(in_file, argv[1]);
@@ -110,23 +109,16 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     //Build reducer arguments
     number_as_chars(block_size, block_size_array);
     number_as_chars(my_reducers, reducers_array);
-    number_as_chars(rank, source_array);
     args[0] = block_size_array;
     args[1] = reducers_array;
-    args[2] = source_array;
+    //TODO add their_work from bellow in the comm line arguments
+    
     printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
-    MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, rank, MPI_COMM_WORLD, &reducercomm, errcodes );
+    MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, rank, MPI_COMM_WORLD, &reducercomm, errcodes);
 
     // Send data to the reducers
     printf("Mapper %d, size %d\n", rank, size);
     their_work = block_size / my_reducers;
-    char test_buf[20] = "qwertyuiopasdfghjkl";
-    for (i = 0; i < my_reducers; i++) {
-        if (i + 1 == my_reducers)
-            their_work += block_size % my_reducers;
-        MPI_Send(&i, 1, MPI_INT, i, 1, reducercomm);
-        
-    }
     return 0;
 }
 
