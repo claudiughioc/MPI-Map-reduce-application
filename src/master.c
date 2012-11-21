@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <time.h>
 
 #define CONFIG_FILE         "/home/claudiu/Desktop/2tema/config/config"
@@ -61,14 +62,14 @@ static int init()
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
     int rank, size, block_size, *errcodes, my_reducers;
-    int i, reducers_work;
+    int i, fair_work, true_work;
     MPI_File mapper_file;
     char *buff;
     MPI_Status status;
     MPI_Datatype arraytype;
     MPI_Offset disp;
     MPI_Comm reducercomm;
-    char **args = (char **)malloc(4 * sizeof(char *));
+    char **args = (char **)malloc(3 * sizeof(char *));
     char reducers_array[10];
     char block_size_array[10];
     char parent_rank[10];
@@ -114,8 +115,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     number_as_chars(rank, parent_rank);
     args[0] = &block_size_array[0];
     args[1] = &reducers_array[0];
-    args[2] = &parent_rank[0];
-    args[3] = NULL;
+    args[2] = NULL;
 
     //TODO add reducers_work from bellow in the comm line arguments
     
@@ -123,15 +123,14 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
 
     // Send data to the reducers
-    int test = 69;
-    int reducer_size;
-    MPI_Comm_size(reducercomm, &reducer_size);
+    fair_work = block_size / my_reducers;
     for (i = 0; i < my_reducers; i++) {
-        printf("Mapper %d sends to %d\n", rank, i);
-        MPI_Send(&test, 1, MPI_INT, i, 1, reducercomm);
+        true_work = fair_work;
+        if (i == (my_reducers - 1))
+            true_work += block_size % my_reducers;
+        printf("Mapper %d to %d work %d\n", rank, i, true_work);
+        MPI_Send(&buff[i * fair_work], true_work, MPI_CHAR, i, 1, reducercomm);
     }
-
-
 
     printf("the mapper %d / %d process will sleep for 7 seconds...\n", rank, size);
     sleep(7);
