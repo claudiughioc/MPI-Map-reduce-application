@@ -61,16 +61,17 @@ static int init()
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
     int rank, size, block_size, *errcodes, my_reducers;
-    int i, their_work;
+    int i, reducers_work;
     MPI_File mapper_file;
     char *buff;
     MPI_Status status;
     MPI_Datatype arraytype;
     MPI_Offset disp;
     MPI_Comm reducercomm;
-    char **args = (char **)malloc(2 * sizeof(char *));
+    char **args = (char **)malloc(2121 * sizeof(char *));
     char reducers_array[10];
     char block_size_array[10];
+    char work_load[10];
 
     // Save the arguments
     strcpy(in_file, argv[1]);
@@ -105,20 +106,22 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
+    reducers_work = block_size / my_reducers;
     
     //Build reducer arguments
     number_as_chars(block_size, block_size_array);
     number_as_chars(my_reducers, reducers_array);
-    args[0] = block_size_array;
-    args[1] = reducers_array;
-    //TODO add their_work from bellow in the comm line arguments
+    number_as_chars(reducers_work, work_load);
+    args[0] = &block_size_array[0];
+    args[1] = &reducers_array[0];
+    //args[2] = &work_load[0];
+    //TODO add reducers_work from bellow in the comm line arguments
     
     printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
     MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, rank, MPI_COMM_WORLD, &reducercomm, errcodes);
 
     // Send data to the reducers
     printf("Mapper %d, size %d\n", rank, size);
-    their_work = block_size / my_reducers;
     return 0;
 }
 
