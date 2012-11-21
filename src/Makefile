@@ -1,11 +1,11 @@
-CC = mpicc
+CC = mpic++
 EXEC = mpirun
-MAPSOURCES=master.c hashtable.c hash.c
-REDSOURCES=reducer.c hashtable.c hash.c
+MAPSOURCES=master.cpp
+REDSOURCES=reducer.cpp
 MAPEXEC=master
 REDEXEC=reducer
 
-build: master.c
+build: master.cpp
 	${CC} $(MAPSOURCES) -o $(MAPEXEC) -Wall
 	${CC} $(REDSOURCES) -o $(REDEXEC) -Wall
 
