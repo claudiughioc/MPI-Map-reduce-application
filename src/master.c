@@ -120,12 +120,15 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     //TODO add reducers_work from bellow in the comm line arguments
     
     printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
-    MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, rank, MPI_COMM_WORLD, &reducercomm, errcodes);
+    MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
 
     // Send data to the reducers
     int test = 69;
+    int reducer_size;
+    MPI_Comm_size(reducercomm, &reducer_size);
     for (i = 0; i < my_reducers; i++) {
-        //MPI_Send(&test, 1, MPI_INT, i, 1, reducercomm);
+        printf("Mapper %d sends to %d\n", rank, i);
+        MPI_Send(&test, 1, MPI_INT, i, 1, reducercomm);
     }
 
 
@@ -163,7 +166,7 @@ static int execute_master()
     args[2] = bytes;
 
     // Create the mappers processes
-    MPI_Comm_spawn( "./master", args, mappers, MPI_INFO_NULL, 0, MPI_COMM_WORLD, &intercomm, errcodes );
+    MPI_Comm_spawn( "./master", args, mappers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &intercomm, errcodes );
 
     MPI_Comm_rank(intercomm, &rank);
     MPI_Comm_size(intercomm, &size);
