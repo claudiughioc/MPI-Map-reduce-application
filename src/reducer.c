@@ -21,9 +21,10 @@ int main(int argc, char **argv)
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
 
-    printf("Reducer %d of %d\n", rank, size);
+    printf("Reducer %d of %d, argc %d\n", rank, size, argc);
     block_size = atoi(argv[1]);
     coworkers = atoi(argv[2]);
+    source = atoi(argv[3]);
 
     //Calculate how much I have to process
     my_size = block_size / coworkers;

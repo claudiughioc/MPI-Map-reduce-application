@@ -68,10 +68,10 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Datatype arraytype;
     MPI_Offset disp;
     MPI_Comm reducercomm;
-    char **args = (char **)malloc(2121 * sizeof(char *));
+    char **args = (char **)malloc(4 * sizeof(char *));
     char reducers_array[10];
     char block_size_array[10];
-    char work_load[10];
+    char parent_rank[10];
 
     // Save the arguments
     strcpy(in_file, argv[1]);
@@ -106,22 +106,34 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
-    reducers_work = block_size / my_reducers;
+    
     
     //Build reducer arguments
     number_as_chars(block_size, block_size_array);
     number_as_chars(my_reducers, reducers_array);
-    number_as_chars(reducers_work, work_load);
+    number_as_chars(rank, parent_rank);
     args[0] = &block_size_array[0];
     args[1] = &reducers_array[0];
-    //args[2] = &work_load[0];
+    args[2] = &parent_rank[0];
+    args[3] = NULL;
+
     //TODO add reducers_work from bellow in the comm line arguments
     
     printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
     MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, rank, MPI_COMM_WORLD, &reducercomm, errcodes);
 
     // Send data to the reducers
-    printf("Mapper %d, size %d\n", rank, size);
+    int test = 69;
+    for (i = 0; i < my_reducers; i++) {
+        //MPI_Send(&test, 1, MPI_INT, i, 1, reducercomm);
+    }
+
+
+
+    printf("the mapper %d / %d process will sleep for 7 seconds...\n", rank, size);
+    sleep(7);
+    printf("the mapper %d / %d process dies\n", rank, size);
+    
     return 0;
 }
 
@@ -160,6 +172,9 @@ static int execute_master()
     // Send the number of reducers for each mapper
     for (i = 0; i < mappers; i++)
         MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
+    printf("The master process will sleep for 10 seconds...\n");
+    sleep(10);
+    printf("THE MASTER %d / %d process dies\n", rank, size);
     return 0;
 }
 
