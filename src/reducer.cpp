@@ -3,13 +3,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <string>
+#include <iostream>
+#include <map>
+using namespace std;
 
 #define HASHTABLE_SIZE      300000
 
 int debug;
 
-static void build_hashtable(char *buff, int size, int *table)
+static void build_hashtable(char *buff, int size, map<string, int> &table)
 {
+    char delimiter[] = " ";
+    char *firstWord, *word, *context;
+
+    char *inputCopy = (char*) calloc(size + 1, sizeof(char));
+    strncpy(inputCopy, buff, size);
+
+    firstWord = strtok_r (inputCopy, delimiter, &context);
+    printf("Cuvant: %s\n", firstWord);
+    while(true) {
+        word = strtok_r (NULL, delimiter, &context);
+        if (word == NULL)
+            break;
+        printf("Cuvant: %s\n", word);
+        table[word] = 1;
+    }
 }
 
 int main(int argc, char **argv)
@@ -20,6 +39,7 @@ int main(int argc, char **argv)
     char *buff;
     MPI_Status status;
 
+    map<string,int> stringCounts;
     MPI_Init(&argc, &argv);
     MPI_Comm_get_parent(&parentcomm);
     if (parentcomm == MPI_COMM_NULL) {
@@ -29,6 +49,7 @@ int main(int argc, char **argv)
 
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
+    debug = rank;
     block_size = atoi(argv[1]);
     coworkers = atoi(argv[2]);
 
@@ -45,5 +66,9 @@ int main(int argc, char **argv)
     
     MPI_Finalize();
     printf("Moare reducer %d din %d\n", rank, size);
+
+    char *str = "mama are mere";
+    if (debug == 0)
+        build_hashtable(str, strlen(str), stringCounts);
     return 0;
 }
