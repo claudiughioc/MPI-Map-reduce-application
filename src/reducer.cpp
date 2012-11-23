@@ -9,25 +9,26 @@
 using namespace std;
 
 #define HASHTABLE_SIZE      300000
+#define CHAR_DELIMITERS     " `~!@#$%^&*()-_=+[{]}|;:',<.>/?\"\\"
 
 int debug;
 
 static void build_hashtable(char *buff, int size, map<string, int> &table)
 {
-    char delimiter[] = " ";
-    char *firstWord, *word, *context;
+    printf("Red %d building hashtble\n", debug);
+    char delimiter[] = CHAR_DELIMITERS;
+    char *word, *context;
 
     char *inputCopy = (char*) calloc(size + 1, sizeof(char));
     strncpy(inputCopy, buff, size);
 
-    firstWord = strtok_r (inputCopy, delimiter, &context);
-    printf("Cuvant: %s\n", firstWord);
+    word = strtok_r(inputCopy, delimiter, &context);
+    table[word] += 1;
     while(true) {
-        word = strtok_r (NULL, delimiter, &context);
+        word = strtok_r(NULL, delimiter, &context);
         if (word == NULL)
             break;
-        printf("Cuvant: %s\n", word);
-        table[word] = 1;
+        table[word] += 1;
     }
 }
 
@@ -38,8 +39,9 @@ int main(int argc, char **argv)
     int my_size;
     char *buff;
     MPI_Status status;
+    map<string, int>::iterator iter;
+    map<string, int> stringCounts;
 
-    map<string,int> stringCounts;
     MPI_Init(&argc, &argv);
     MPI_Comm_get_parent(&parentcomm);
     if (parentcomm == MPI_COMM_NULL) {
@@ -61,14 +63,18 @@ int main(int argc, char **argv)
 
     // Now wait for the data from my mapper...
     MPI_Recv(buff, my_size, MPI_CHAR, 0, 1, parentcomm, &status);
+    buff[my_size] = '\0';
     printf("Reducer %d of %d, received %d\n", rank, size, my_size);
 
+    char *str = "mama, .  are : mere";
+    if (debug == 0) {
+        build_hashtable(str, strlen(str), stringCounts);
+        for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++)
+            cout << "word: " << iter->first << " count: " << iter->second << endl;
+    }
     
     MPI_Finalize();
     printf("Moare reducer %d din %d\n", rank, size);
 
-    char *str = "mama are mere";
-    if (debug == 0)
-        build_hashtable(str, strlen(str), stringCounts);
     return 0;
 }
