@@ -10,6 +10,8 @@
 int *reducers, mappers, in_file_size;
 char in_file[255], out_file[255];
 
+int debug;
+
 static void number_as_chars(int num, char *dest) {
     int i = 0, aux, div = 1;
     aux = num;
@@ -137,11 +139,17 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         MPI_Send(&buff[i * fair_work], true_work, MPI_CHAR, i, 1, reducercomm);
     }
 
-    // Wait to die
-    printf("the mapper %d / %d process will sleep for 7 seconds...\n", rank, size);
-    sleep(7);
-    printf("the mapper %d / %d process dies\n", rank, size);
-    
+    // Wait for data from the reducers
+    for (i = 0; i < my_reducers; i++) {
+        MPI_Recv(&debug, 1, MPI_INT, i, 1, reducercomm, &status);
+        printf("Mapper %d received STOP from %d\n", rank, i);
+    }
+
+    // Send data to the master process
+    printf("Mapper %d sends STOP\n", rank);
+    MPI_Send(&debug, 1, MPI_INT, 0, 1, parentcomm);
+
+    printf("Mapper %d / %d process dies\n", rank, size);
     return 0;
 }
 
@@ -149,6 +157,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 static int execute_master()
 {
     MPI_Comm intercomm;
+    MPI_Status status;
     int rank, size, i;
     char bytes_arg[100], mappers_arg[2];
 
@@ -183,9 +192,11 @@ static int execute_master()
     for (i = 0; i < mappers; i++)
         MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
 
-    // Wait to die
-    printf("The master process will sleep for 10 seconds...\n");
-    sleep(10);
+    // Wait for data from the mappers
+    for (i = 0; i < mappers; i++) {
+        MPI_Recv(&debug, 1, MPI_INT, i, 1, intercomm, &status);
+        printf("Process received STOP from mapper %d\n", i);
+    }
     printf("THE MASTER %d / %d process dies\n", rank, size);
     return 0;
 }
