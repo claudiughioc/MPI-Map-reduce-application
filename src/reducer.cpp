@@ -66,12 +66,18 @@ int main(int argc, char **argv)
     buff[my_size] = '\0';
     printf("Reducer %d of %d, received %d\n", rank, size, my_size);
 
+    //Build the hashtable with words and their frequency
+    build_hashtable(buff, strlen(buff), stringCounts);
+    printf("Reducer %d of %d, built the HT\n", rank, size);
+
+    /*
     char *str = "mama, .  are : mere";
     if (debug == 0) {
         build_hashtable(str, strlen(str), stringCounts);
         for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++)
             cout << "word: " << iter->first << " count: " << iter->second << endl;
     }
+    */
     
     MPI_Finalize();
     printf("Moare reducer %d din %d\n", rank, size);

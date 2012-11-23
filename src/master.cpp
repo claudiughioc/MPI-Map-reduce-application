@@ -30,11 +30,15 @@ static void number_as_chars(int num, char *dest) {
 static int init()
 {
     int i;
+
+    //Open the configuration file
     FILE *config = fopen(CONFIG_FILE, "r");
     if (config == NULL) {
         printf("Error on opening config file\n");
         return 1;
     }
+
+    // Save the number of mappers and reducers
     fscanf(config, "%d", &mappers);
     reducers = (int *)malloc(mappers * sizeof(int));
     if (reducers == NULL) {
@@ -44,10 +48,12 @@ static int init()
     for (i = 0; i < mappers; i++)
         fscanf(config,"%d", &reducers[i]);
 
+    // Save the input and output file names
     fscanf(config, "%s", in_file);
     fscanf(config, "%s", out_file);
     fclose(config);
 
+    // Save the size of the input file
     FILE *fp = fopen(in_file, "r");
     fseek(fp, 0L, SEEK_END);
     in_file_size = ftell(fp);
@@ -70,17 +76,17 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Offset disp;
     MPI_Comm reducercomm;
     char **args = (char **)malloc(3 * sizeof(char *));
-    char reducers_array[10];
-    char block_size_array[10];
-    char parent_rank[10];
+    char reducers_arg[10], block_size_arg[10];
 
-    // Save the arguments
+    // Save the arguments (input file, number of mappers, size of input file)
     strcpy(in_file, argv[1]);
     mappers = atoi(argv[2]);
     in_file_size = atoi(argv[3]);
 
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
+
+    // Calculate how much this mapper has to process
     block_size = in_file_size / mappers;
     disp = rank * sizeof(char) * block_size;
     // Add some chars for the last mapper, if needed
@@ -102,27 +108,26 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Read the designated part of the input file
     MPI_File_read(mapper_file, buff, block_size, MPI_CHAR, &status);
     MPI_File_close(&mapper_file);
-    //printf("M %d read %s\n", rank, buff);
 
     // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
     
     
-    //Build reducer arguments
-    number_as_chars(block_size, block_size_array);
-    number_as_chars(my_reducers, reducers_array);
-    number_as_chars(rank, parent_rank);
-    args[0] = &block_size_array[0];
-    args[1] = &reducers_array[0];
+    // Build reducer arguments
+    // 0. The size of the buffer received by this mapper
+    // 1. The total number of reducers for this mapper
+    number_as_chars(block_size, block_size_arg);
+    number_as_chars(my_reducers, reducers_arg);
+    args[0] = &block_size_arg[0];
+    args[1] = &reducers_arg[0];
     args[2] = NULL;
 
-    //TODO add reducers_work from bellow in the comm line arguments
-    
+    // Create the reducers
     printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
     MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
 
-    // Send data to the reducers
+    // Send data to the reducers (consecutive chunks of the buffer)
     fair_work = block_size / my_reducers;
     for (i = 0; i < my_reducers; i++) {
         true_work = fair_work;
@@ -132,6 +137,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         MPI_Send(&buff[i * fair_work], true_work, MPI_CHAR, i, 1, reducercomm);
     }
 
+    // Wait to die
     printf("the mapper %d / %d process will sleep for 7 seconds...\n", rank, size);
     sleep(7);
     printf("the mapper %d / %d process dies\n", rank, size);
@@ -144,8 +150,9 @@ static int execute_master()
 {
     MPI_Comm intercomm;
     int rank, size, i;
-    char bytes[100], c[2];
+    char bytes_arg[100], mappers_arg[2];
 
+    // Read the configuration file and initiate data
     if (init())
         return 1;
 
@@ -157,12 +164,13 @@ static int execute_master()
     printf("P creates %d mappers\n", mappers);
 
     //Some data (input file, mappers) will be sent as arguments
+    number_as_chars(mappers, mappers_arg);
+    number_as_chars(in_file_size, &bytes_arg[0]);
     char **args = (char **) malloc(5 * sizeof(char *));
     args[0] = in_file;
-    number_as_chars(in_file_size, &bytes[0]);
-    number_as_chars(mappers, c);
-    args[1] = c;
-    args[2] = bytes;
+    args[1] = mappers_arg;
+    args[2] = bytes_arg;
+    args[3] = NULL;
 
     // Create the mappers processes
     MPI_Comm_spawn( "./master", args, mappers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &intercomm, errcodes );
@@ -174,6 +182,8 @@ static int execute_master()
     // Send the number of reducers for each mapper
     for (i = 0; i < mappers; i++)
         MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
+
+    // Wait to die
     printf("The master process will sleep for 10 seconds...\n");
     sleep(10);
     printf("THE MASTER %d / %d process dies\n", rank, size);
