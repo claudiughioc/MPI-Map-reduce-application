@@ -1,11 +1,4 @@
-#include "mpi.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <time.h>
-
-#define CONFIG_FILE         "/home/claudiu/Desktop/2tema/config/config"
+#include "common.h"
 
 int *reducers, mappers, in_file_size;
 char in_file[255], out_file[255];
@@ -70,15 +63,21 @@ static int init()
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
     int rank, size, block_size, *errcodes, my_reducers;
-    int i, fair_work, true_work;
-    MPI_File mapper_file;
+    int i, fair_work, true_work, map_size, max_map_size = 0;
+    int blocklen[2] = {1, WORD_MAX_SIZE};
     char *buff;
-    MPI_Status status;
-    MPI_Datatype arraytype;
-    MPI_Offset disp;
-    MPI_Comm reducercomm;
     char **args = (char **)malloc(3 * sizeof(char *));
     char reducers_arg[10], block_size_arg[10];
+    map<string, int> stringCounts;
+    struct map_entry *final_map, **result_maps;
+    MPI_File mapper_file;
+    MPI_Status status;
+    MPI_Datatype arraytype;
+    MPI_Datatype mapType;
+    MPI_Datatype types[] = {MPI_INT, MPI_CHAR};
+    MPI_Aint disper[2], ext;
+    MPI_Offset disp;
+    MPI_Comm reducercomm;
 
     // Save the arguments (input file, number of mappers, size of input file)
     strcpy(in_file, argv[1]);
@@ -114,8 +113,8 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
-    
-    
+    result_maps = (struct map_entry **)malloc(my_reducers * sizeof(struct map_entry*));
+
     // Build reducer arguments
     // 0. The size of the buffer received by this mapper
     // 1. The total number of reducers for this mapper
@@ -139,10 +138,23 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         MPI_Send(&buff[i * fair_work], true_work, MPI_CHAR, i, 1, reducercomm);
     }
 
+    // Create a datatype to receive the hasmap
+    MPI_Type_extent(MPI_INT, &ext);
+    disper[0] = 0;
+    disper[1] = ext;
+    MPI_Type_struct(2, blocklen, disper, types, &mapType);
+    MPI_Type_commit(&mapType);
+
     // Wait for data from the reducers
     for (i = 0; i < my_reducers; i++) {
-        MPI_Recv(&debug, 1, MPI_INT, i, 1, reducercomm, &status);
-        printf("Mapper %d received STOP from %d\n", rank, i);
+        // Get the size of the map from the current reducer
+        MPI_Recv(&map_size, 1, MPI_INT, i, 1, reducercomm, &status);
+        printf("Mapper %d received map size %d from %d\n", rank, map_size, i);
+        result_maps[i] = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
+
+        // Get the hashmap of the current reducer
+        MPI_Recv(result_maps[i], map_size, mapType, i, 1, reducercomm, &status);
+        printf("Mapper %d received map from %d\n", rank, map_size, i);
     }
 
     // Send data to the master process

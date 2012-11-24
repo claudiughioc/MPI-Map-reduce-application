@@ -1,15 +1,4 @@
-#include "mpi.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <string>
-#include <iostream>
-#include <map>
-using namespace std;
-
-#define HASHTABLE_SIZE      300000
-#define CHAR_DELIMITERS     " `~!@#$%^&*()-_=+[{]}|;:',<.>/?\"\\"
+#include "common.h"
 
 int debug;
 
@@ -38,12 +27,18 @@ static void build_hashtable(char *buff, int size, map<string, int> &table)
 int main(int argc, char **argv)
 {
     MPI_Comm parentcomm;
-    int rank, size, i, block_size, coworkers;
-    int my_size;
+    int rank, size, i = 0, block_size, coworkers;
+    int my_size, map_bytes;
+    int blocklen[2] = {1, WORD_MAX_SIZE};
+    long map_size;
     char *buff;
     MPI_Status status;
+    MPI_Datatype mapType;
+    MPI_Datatype types[] = {MPI_INT, MPI_CHAR};
+    MPI_Aint disp[2], ext;
     map<string, int>::iterator iter;
     map<string, int> stringCounts;
+    struct map_entry *hashmap;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_get_parent(&parentcomm);
@@ -74,10 +69,26 @@ int main(int argc, char **argv)
     //Build the hashtable with words and their frequency
     build_hashtable(buff, strlen(buff), stringCounts);
     printf("Reducer %d of %d, built the HT\n", rank, size);
+    map_size = stringCounts.size();
+    hashmap = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
+    for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++) {
+        strcpy(hashmap[i].word, iter->first.c_str());
+        hashmap[i].word[iter->first.size()] = '\0';
+        hashmap[i].freq = iter->second;
+        i++;
+    }
+
+    // Create a new datatype
+    MPI_Type_extent(MPI_INT, &ext);
+    disp[0] = 0;
+    disp[1] = ext;
+    MPI_Type_struct(2, blocklen, disp, types, &mapType);
+    MPI_Type_commit(&mapType);
 
     // Send data back to the mapper
-    printf("Reducer %d of %d, sent STOP\n", rank, size);
-    MPI_Send(&debug, 1, MPI_INT, 0, 1, parentcomm);
+    printf("Reducer %d of %d, sent map_size %d\n", rank, size, map_size);
+    MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
+    MPI_Send(hashmap, map_size, mapType, 0, 1, parentcomm);
 
     /*
     char *str = "mama, .  are : mere";
