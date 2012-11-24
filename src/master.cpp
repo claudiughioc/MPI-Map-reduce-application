@@ -63,19 +63,16 @@ static int init()
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
     int rank, size, block_size, *errcodes, my_reducers;
-    int i, fair_work, true_work, map_size, max_map_size = 0;
-    int blocklen[2] = {1, WORD_MAX_SIZE};
+    int i, j, fair_work, true_work, map_size;
     char *buff;
     char **args = (char **)malloc(3 * sizeof(char *));
     char reducers_arg[10], block_size_arg[10];
-    map<string, int> stringCounts;
+    map<string, int, cmp> stringCounts;
+    map<string, int, cmp>::iterator iter;
     struct map_entry *final_map, **result_maps;
     MPI_File mapper_file;
     MPI_Status status;
     MPI_Datatype arraytype;
-    MPI_Datatype mapType;
-    MPI_Datatype types[] = {MPI_INT, MPI_CHAR};
-    MPI_Aint disper[2], ext;
     MPI_Offset disp;
     MPI_Comm reducercomm;
 
@@ -138,6 +135,8 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         MPI_Send(&buff[i * fair_work], true_work, MPI_CHAR, i, 1, reducercomm);
     }
 
+    //TODO handle the hot areas
+
     // Create a datatype to receive the hasmap
     MPI_Type_extent(MPI_INT, &ext);
     disper[0] = 0;
@@ -154,8 +153,27 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 
         // Get the hashmap of the current reducer
         MPI_Recv(result_maps[i], map_size, mapType, i, 1, reducercomm, &status);
-        printf("Mapper %d received map from %d\n", rank, map_size, i);
+        printf("Mapper %d received map from %d\n", rank, i);
+        
+        for (j = 0; j < map_size; j++)
+            stringCounts[result_maps[i][j].word] += result_maps[i][j].freq;
     }
+    
+    // Create a final_map to summarize data from reducers
+    map_size = stringCounts.size();
+    final_map = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
+    i = 0;
+    for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++) {
+        strcpy(final_map[i].word, iter->first.c_str());
+        final_map[i].word[iter->first.size()] = '\0';
+        final_map[i].freq = iter->second;
+        i++;
+    }
+     
+    // Send the mapper's hashmap to the master process
+    printf("Mapper %d sends RESULT\n", rank);
+    MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
+    MPI_Send(final_map, map_size, mapType, 0, 1, parentcomm);
 
     // Send data to the master process
     printf("Mapper %d sends STOP\n", rank);
@@ -170,14 +188,18 @@ static int execute_master()
 {
     MPI_Comm intercomm;
     MPI_Status status;
-    int rank, size, i;
+    int rank, size, i, j, map_size;
     char bytes_arg[100], mappers_arg[2];
+    struct map_entry *final_map, **result_maps;
+    map<string, int, cmp> stringCounts;
+    map<string, int, cmp>::iterator iter;
 
     // Read the configuration file and initiate data
     if (init())
         return 1;
 
     int *errcodes = (int *)malloc(mappers * sizeof(int));
+    result_maps = (struct map_entry**)malloc(mappers * sizeof(struct map_entry*));
     if (errcodes == NULL) {
         printf("Error on alocating err codes\n");
         return 1;
@@ -204,7 +226,37 @@ static int execute_master()
     for (i = 0; i < mappers; i++)
         MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
 
+    // Create the new datatype to receive the hashmap
+    MPI_Type_extent(MPI_INT, &ext);
+    disper[0] = 0;
+    disper[1] = ext;
+    MPI_Type_struct(2, blocklen, disper, types, &mapType);
+    MPI_Type_commit(&mapType);
+
     // Wait for data from the mappers
+    for (i = 0; i < mappers; i++) {
+        MPI_Recv(&map_size, 1, MPI_INT, i, 1, intercomm, &status);
+        printf("Process received map_size %d from mapper %d\n", map_size, i);
+        result_maps[i] = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
+
+        // Get the hashmap of the current mapper
+        MPI_Recv(result_maps[i], map_size, mapType, i, 1, intercomm, &status);
+        printf("Process received map from %d\n", i);
+        for (j = 0; j < map_size; j++)
+            stringCounts[result_maps[i][j].word] += result_maps[i][j].freq;
+    }
+
+    // Create a final_map to summarize data from reducers
+    map_size = stringCounts.size();
+    final_map = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
+    i = 0;
+    for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++) {
+        strcpy(final_map[i].word, iter->first.c_str());
+        final_map[i].word[iter->first.size()] = '\0';
+        final_map[i].freq = iter->second;
+        i++;
+    }
+
     for (i = 0; i < mappers; i++) {
         MPI_Recv(&debug, 1, MPI_INT, i, 1, intercomm, &status);
         printf("Process received STOP from mapper %d\n", i);

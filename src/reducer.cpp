@@ -3,7 +3,7 @@
 int debug;
 
 // Builds a hashtable which associates a word with its frequency
-static void build_hashtable(char *buff, int size, map<string, int> &table)
+static void build_hashtable(char *buff, int size, map<string, int, cmp> &table)
 {
     printf("Red %d building hashtble\n", debug);
     char delimiter[] = CHAR_DELIMITERS;
@@ -29,15 +29,11 @@ int main(int argc, char **argv)
     MPI_Comm parentcomm;
     int rank, size, i = 0, block_size, coworkers;
     int my_size, map_bytes;
-    int blocklen[2] = {1, WORD_MAX_SIZE};
     long map_size;
     char *buff;
     MPI_Status status;
-    MPI_Datatype mapType;
-    MPI_Datatype types[] = {MPI_INT, MPI_CHAR};
-    MPI_Aint disp[2], ext;
-    map<string, int>::iterator iter;
-    map<string, int> stringCounts;
+    map<string, int, cmp>::iterator iter;
+    map<string, int, cmp> stringCounts;
     struct map_entry *hashmap;
 
     MPI_Init(&argc, &argv);
@@ -80,9 +76,9 @@ int main(int argc, char **argv)
 
     // Create a new datatype
     MPI_Type_extent(MPI_INT, &ext);
-    disp[0] = 0;
-    disp[1] = ext;
-    MPI_Type_struct(2, blocklen, disp, types, &mapType);
+    disper[0] = 0;
+    disper[1] = ext;
+    MPI_Type_struct(2, blocklen, disper, types, &mapType);
     MPI_Type_commit(&mapType);
 
     // Send data back to the mapper
