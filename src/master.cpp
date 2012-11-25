@@ -3,8 +3,7 @@
 int reducers, mappers, in_file_size;
 char in_file[255], out_file[255];
 
-int debug;
-
+// Puts a number in a char *
 static void number_as_chars(int num, char *dest) {
     int i = 0, aux, div = 1;
     aux = num;
@@ -64,7 +63,8 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Offset disp;
     MPI_Comm reducercomm;
 
-    // Save the arguments (input file, number of mappers, size of input file)
+    // Save the arguments (input file, number of mappers,
+    // size of input file, number of reducers)
     strcpy(in_file, argv[1]);
     mappers = atoi(argv[2]);
     in_file_size = atoi(argv[3]);
@@ -78,9 +78,12 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Calculate how much this mapper has to process
     block_size = in_file_size / mappers;
     disp = rank * sizeof(char) * block_size;
+
     // Add some chars for the last mapper, if needed
     if (rank == (size - 1) && (block_size % mappers))
         block_size = block_size + in_file_size % mappers;
+
+    // Create the buffer containgin the chunk of data
     buff = (char *)malloc(block_size * sizeof(char));
     if (!buff) {
         printf("Error on allocating reader buffer\n");
@@ -98,9 +101,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_File_read(mapper_file, buff, block_size, MPI_CHAR, &status);
     MPI_File_close(&mapper_file);
 
-    // Build reducer arguments
-    // 0. The size of the buffer received by this mapper
-    // 1. The total number of reducers for this mapper
+    // Handle the split area between a mapper's reducers
     fair_work = block_size / my_reducers;
     offset = diff = 0;
     for (i = 0; i < my_reducers; i++) {
@@ -112,7 +113,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         diff = 0;
 
         // Continue until space
-        while(buff[offset + fair_work + diff - 1] != ' ' && (i + 1 != my_reducers))
+        while(!strchr(CHAR_DELIMITERS, buff[offset + fair_work + diff - 1]) && (i + 1 != my_reducers))
             diff++;
         reducer_off[i] = true_work + diff;
         offset += fair_work;
@@ -132,7 +133,25 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         offset += reducer_off[i];
     }
 
-    //TODO handle the hot areas
+    // Handle split area between mappers
+    struct map_entry first_word, second_word;
+    first_word.word[0] = '\0';
+    second_word.word[0] = '\0';
+    i = 0;
+    while (!strchr(CHAR_DELIMITERS, buff[i]))
+        i++;
+    if (i > 0) {
+        strncpy(first_word.word, buff, i);
+        first_word.word[i] = '\0';
+        printf("Mapper %d primul cuvant .%s.\n", rank, first_word.word);
+    }
+    i = strlen(buff) - 1;
+    while (!strchr(CHAR_DELIMITERS, buff[i]))
+        i--;
+    if (i < (strlen(buff) - 1)) {
+        strcpy(second_word.word, &buff[i + 1]);
+        printf("Mapper %d al doilea cuvant .%s.\n", rank, second_word.word);
+    }
 
     // Create a datatype to receive the hasmap
     MPI_Type_extent(MPI_INT, &ext);
@@ -159,6 +178,10 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     printf("Mapper %d sends RESULT\n", rank);
     MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
     MPI_Send(final_map, map_size, mapType, 0, 1, parentcomm);
+
+    // Send the marginal words to the master
+    MPI_Send(&first_word, 1, mapType, 0, 1, parentcomm);
+    MPI_Send(&second_word, 1, mapType, 0, 1, parentcomm);
 
     printf("Mapper %d / %d process dies\n", rank, size);
     return 0;
@@ -206,7 +229,8 @@ static int execute_master()
     MPI_Status status;
     int rank, size, i, j, map_size, offset = 0;;
     char bytes_arg[100], mappers_arg[2], reducers_arg[2];
-    struct map_entry final_map[MAXIMUM_SIZE];
+    struct map_entry final_map[MAXIMUM_SIZE], curr_first_word,
+                     curr_second_word, second_word;
     map<string, int, cmp> stringCounts;
 
     // Read the configuration file and initiate data
@@ -259,6 +283,33 @@ static int execute_master()
     // Create and print the map
     for (j = 0; j < offset; j++)
         stringCounts[final_map[j].word] += final_map[j].freq;
+
+    // Get the marginal words from the mappers
+    for (i = 0; i < mappers; i++) {
+        MPI_Recv(&curr_first_word, 1, mapType, i, 1, intercomm, &status);
+        MPI_Recv(&curr_second_word, 1, mapType, i, 1, intercomm, &status);
+
+        if (i == 0) {
+            second_word = curr_second_word;
+            continue;
+        }
+        // Remove the word parts from the hash and add the good word
+        if (second_word.word[0] != '\0' && curr_first_word.word[0] != '\0') {
+            if (stringCounts[second_word.word] > 1)
+                stringCounts[second_word.word] -= 1;
+            else
+                stringCounts.erase(second_word.word);
+
+            if (stringCounts[curr_first_word.word] > 1)
+                stringCounts[curr_first_word.word] -= 1;
+            else
+                stringCounts.erase(curr_first_word.word);
+            strcat(second_word.word, curr_first_word.word);
+            stringCounts[second_word.word] += 1;
+        }
+        second_word = curr_second_word;
+    }
+
     format_and_print(stringCounts);
 
     printf("THE MASTER %d / %d process dies\n", rank, size);

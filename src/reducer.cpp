@@ -1,7 +1,5 @@
 #include "common.h"
 
-int debug;
-
 // Builds a hashtable which associates a word with its frequency
 static void build_hashtable(char *buff, int size, map<string, int, cmp> &table)
 {
@@ -43,7 +41,6 @@ int main(int argc, char **argv)
 
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
-    debug = rank;
 
     //Calculate how much I have to process
     MPI_Recv(&my_size, 1, MPI_INT, 0, 1, parentcomm, &status);
