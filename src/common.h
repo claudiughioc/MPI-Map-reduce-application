@@ -14,6 +14,7 @@ using namespace std;
 
 #define CHAR_DELIMITERS     " \n`\t~!\r@#$%^&*()-_=+[{]}|;:',<.>/?\"\\"
 #define WORD_MAX_SIZE       50
+#define MAXIMUM_SIZE        100000
 #define CONFIG_FILE         "/home/claudiu/Desktop/2tema/config/config"
 
 // Structure which describes a map entry

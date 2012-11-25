@@ -63,13 +63,11 @@ static int init()
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
     int rank, size, block_size, *errcodes, my_reducers;
-    int i, j, fair_work, true_work, map_size;
+    int i, j, fair_work, true_work, map_size, offset = 0;
     char *buff;
     char **args = (char **)malloc(3 * sizeof(char *));
     char reducers_arg[10], block_size_arg[10];
-    map<string, int, cmp> stringCounts;
-    map<string, int, cmp>::iterator iter;
-    struct map_entry *final_map, **result_maps;
+    struct map_entry final_map[MAXIMUM_SIZE];
     MPI_File mapper_file;
     MPI_Status status;
     MPI_Datatype arraytype;
@@ -110,7 +108,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
-    result_maps = (struct map_entry **)malloc(my_reducers * sizeof(struct map_entry*));
 
     // Build reducer arguments
     // 0. The size of the buffer received by this mapper
@@ -149,28 +146,15 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         // Get the size of the map from the current reducer
         MPI_Recv(&map_size, 1, MPI_INT, i, 1, reducercomm, &status);
         printf("Mapper %d received map size %d from %d\n", rank, map_size, i);
-        result_maps[i] = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
 
         // Get the hashmap of the current reducer
-        MPI_Recv(result_maps[i], map_size, mapType, i, 1, reducercomm, &status);
+        MPI_Recv(&final_map[offset], map_size, mapType, i, 1, reducercomm, &status);
         printf("Mapper %d received map from %d\n", rank, i);
-        
-        for (j = 0; j < map_size; j++)
-            stringCounts[result_maps[i][j].word] += result_maps[i][j].freq;
+        offset += map_size;
     }
     
-    // Create a final_map to summarize data from reducers
-    map_size = stringCounts.size();
-    final_map = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
-    i = 0;
-    for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++) {
-        strcpy(final_map[i].word, iter->first.c_str());
-        final_map[i].word[iter->first.size()] = '\0';
-        final_map[i].freq = iter->second;
-        i++;
-    }
-     
     // Send the mapper's hashmap to the master process
+    map_size = offset;
     printf("Mapper %d sends RESULT\n", rank);
     MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
     MPI_Send(final_map, map_size, mapType, 0, 1, parentcomm);
@@ -217,18 +201,16 @@ static int execute_master()
 {
     MPI_Comm intercomm;
     MPI_Status status;
-    int rank, size, i, j, map_size;
+    int rank, size, i, j, map_size, offset = 0;;
     char bytes_arg[100], mappers_arg[2];
-    struct map_entry *final_map, **result_maps;
+    struct map_entry final_map[MAXIMUM_SIZE];
     map<string, int, cmp> stringCounts;
-    map<string, int, cmp>::iterator iter;
 
     // Read the configuration file and initiate data
     if (init())
         return 1;
 
     int *errcodes = (int *)malloc(mappers * sizeof(int));
-    result_maps = (struct map_entry**)malloc(mappers * sizeof(struct map_entry*));
     if (errcodes == NULL) {
         printf("Error on alocating err codes\n");
         return 1;
@@ -266,15 +248,16 @@ static int execute_master()
     for (i = 0; i < mappers; i++) {
         MPI_Recv(&map_size, 1, MPI_INT, i, 1, intercomm, &status);
         printf("Process received map_size %d from mapper %d\n", map_size, i);
-        result_maps[i] = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
 
         // Get the hashmap of the current mapper
-        MPI_Recv(result_maps[i], map_size, mapType, i, 1, intercomm, &status);
+        MPI_Recv(&final_map[offset], map_size, mapType, i, 1, intercomm, &status);
         printf("Process received map from %d\n", i);
-        for (j = 0; j < map_size; j++)
-            stringCounts[result_maps[i][j].word] += result_maps[i][j].freq;
+        offset += map_size;
     }
 
+    // Create and print the map
+    for (j = 0; j < offset; j++)
+        stringCounts[final_map[j].word] += final_map[j].freq;
     format_and_print(stringCounts);
 
     printf("THE MASTER %d / %d process dies\n", rank, size);
