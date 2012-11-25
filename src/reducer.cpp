@@ -45,16 +45,13 @@ int main(int argc, char **argv)
     //Calculate how much I have to process
     MPI_Recv(&my_size, 1, MPI_INT, 0, 1, parentcomm, &status);
     buff = (char *)malloc((my_size + 1) * sizeof(char));
-    //printf("Reducer %d of %d, received size %d\n", rank, size, my_size);
 
     // Now wait for the data from my mapper...
     MPI_Recv(buff, my_size, MPI_CHAR, 0, 1, parentcomm, &status);
     buff[my_size] = '\0';
-    //printf("Reducer %d of %d, received %d\n", rank, size, my_size);
 
     //Build the hashtable with words and their frequency
     build_hashtable(buff, strlen(buff), stringCounts);
-    //printf("Reducer %d of %d, built the HT\n", rank, size);
     map_size = stringCounts.size();
     hashmap = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
     for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++) {
@@ -64,7 +61,7 @@ int main(int argc, char **argv)
         i++;
     }
 
-    // Create a new datatype
+    // Create a new datatype to correspond for the map_entry structure
     MPI_Type_extent(MPI_INT, &ext);
     disper[0] = 0;
     disper[1] = ext;
@@ -72,12 +69,10 @@ int main(int argc, char **argv)
     MPI_Type_commit(&mapType);
 
     // Send data back to the mapper
-    //printf("Reducer %d of %d, sent map_size %d\n", rank, size, map_size);
     MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
     MPI_Send(hashmap, map_size, mapType, 0, 1, parentcomm);
 
     MPI_Finalize();
-    //printf("Moare reducer %d din %d\n", rank, size);
 
     return 0;
 }

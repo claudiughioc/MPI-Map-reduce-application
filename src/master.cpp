@@ -43,7 +43,6 @@ static int init()
     FILE *fp = fopen(in_file, "r");
     fseek(fp, 0L, SEEK_END);
     in_file_size = ftell(fp);
-    //printf("File size is %d\n", in_file_size);
     fseek(fp, 0L, SEEK_SET);
     fclose(fp);
 
@@ -89,7 +88,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         printf("Error on allocating reader buffer\n");
         return 1;
     }
-    //printf("Mapper / size %d %d, gets b_size %d\n", rank, size, block_size);
 
     // Open input file and set the view
     MPI_File_open(MPI_COMM_WORLD, in_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &mapper_file);
@@ -121,7 +119,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     }
 
     // Create the reducers
-    //printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
     MPI_Comm_spawn( "./reducer", MPI_ARGV_NULL, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
 
     // Send data to the reducers (consecutive chunks of the buffer)
@@ -129,7 +126,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     for (i = 0; i < my_reducers; i++) {
         MPI_Send(&reducer_off[i], 1, MPI_INT, i, 1, reducercomm);
 
-        //printf("Mapper %d to %d work %d\n", rank, i, reducer_off[i]);
         MPI_Send(&buff[offset], reducer_off[i], MPI_CHAR, i, 1, reducercomm);
         offset += reducer_off[i];
     }
@@ -145,7 +141,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     if (i > 0) {
         strncpy(first_word.word, buff, i);
         first_word.word[i] = '\0';
-        //printf("Mapper %d primul cuvant .%s.\n", rank, first_word.word);
     }
     //Save the last word
     i = strlen(buff) - 1;
@@ -153,7 +148,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         i--;
     if (i < (strlen(buff) - 1)) {
         strcpy(second_word.word, &buff[i + 1]);
-        //printf("Mapper %d al doilea cuvant .%s.\n", rank, second_word.word);
     }
 
     // Create a datatype to receive the hashmap
@@ -168,17 +162,14 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     for (i = 0; i < my_reducers; i++) {
         // Get the size of the map from the current reducer
         MPI_Recv(&map_size, 1, MPI_INT, i, 1, reducercomm, &status);
-        //printf("Mapper %d received map size %d from %d\n", rank, map_size, i);
 
         // Get the hashmap of the current reducer
         MPI_Recv(&final_map[offset], map_size, mapType, i, 1, reducercomm, &status);
-        //printf("Mapper %d received map from %d\n", rank, i);
         offset += map_size;
     }
     
     // Send the mapper's hashmap to the master process
     map_size = offset;
-    //printf("Mapper %d sends RESULT\n", rank);
     MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
     MPI_Send(final_map, map_size, mapType, 0, 1, parentcomm);
 
@@ -186,7 +177,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Send(&first_word, 1, mapType, 0, 1, parentcomm);
     MPI_Send(&second_word, 1, mapType, 0, 1, parentcomm);
 
-    //printf("Mapper %d / %d process dies\n", rank, size);
     return 0;
 }
 
@@ -206,7 +196,6 @@ static void format_and_print(map<string, int, cmp> table)
 {
     unsigned int i;
     char dest[WORD_MAX_SIZE];
-    //printf("Master process prints the result\n");
     std::vector<mypair> myvec(table.begin(), table.end());
 
     // Sort using a comparation function
@@ -245,7 +234,6 @@ static int execute_master()
         printf("Error on alocating err codes\n");
         return 1;
     }
-    //printf("P creates %d mappers\n", mappers);
 
     //Some data (input file, mappers) will be sent as arguments
     number_as_chars(mappers, mappers_arg);
@@ -263,7 +251,6 @@ static int execute_master()
 
     MPI_Comm_rank(intercomm, &rank);
     MPI_Comm_size(intercomm, &size);
-    //printf("P rank si size in intercom %d %d\n", rank, size);
 
     // Create the new datatype to receive the hashmap
     MPI_Type_extent(MPI_INT, &ext);
@@ -275,11 +262,9 @@ static int execute_master()
     // Wait for data from the mappers
     for (i = 0; i < mappers; i++) {
         MPI_Recv(&map_size, 1, MPI_INT, i, 1, intercomm, &status);
-        //printf("Process received map_size %d from mapper %d\n", map_size, i);
 
         // Get the hashmap of the current mapper
         MPI_Recv(&final_map[offset], map_size, mapType, i, 1, intercomm, &status);
-        //printf("Process received map from %d\n", i);
         offset += map_size;
     }
 
@@ -315,7 +300,6 @@ static int execute_master()
 
     format_and_print(stringCounts);
 
-    //printf("THE MASTER %d / %d process dies\n", rank, size);
     return 0;
 }
 
