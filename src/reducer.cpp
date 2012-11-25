@@ -51,10 +51,9 @@ int main(int argc, char **argv)
     coworkers = atoi(argv[2]);
 
     //Calculate how much I have to process
-    my_size = block_size / coworkers;
-    if (rank + 1 == size)
-        my_size += block_size % coworkers;
+    MPI_Recv(&my_size, 1, MPI_INT, 0, 1, parentcomm, &status);
     buff = (char *)malloc((my_size + 1) * sizeof(char));
+    printf("Reducer %d of %d, received size %d\n", rank, size, my_size);
 
     // Now wait for the data from my mapper...
     MPI_Recv(buff, my_size, MPI_CHAR, 0, 1, parentcomm, &status);

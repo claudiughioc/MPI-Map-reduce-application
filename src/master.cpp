@@ -62,8 +62,8 @@ static int init()
 // Execute the mapper code
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
-    int rank, size, block_size, *errcodes, my_reducers;
-    int i, j, fair_work, true_work, map_size, offset = 0;
+    int rank, size, block_size, *errcodes, my_reducers, diff;
+    int i, j, fair_work, true_work, map_size, offset = 0, *reducer_off;
     char *buff;
     char **args = (char **)malloc(3 * sizeof(char *));
     char reducers_arg[10], block_size_arg[10];
@@ -108,10 +108,29 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     // Get the number of reducers to create
     MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
     errcodes = (int *)malloc(my_reducers * sizeof(int));
+    reducer_off = (int *)malloc(my_reducers * sizeof(int));
 
     // Build reducer arguments
     // 0. The size of the buffer received by this mapper
     // 1. The total number of reducers for this mapper
+    fair_work = block_size / my_reducers;
+    offset = diff = 0;
+    for (i = 0; i < my_reducers; i++) {
+        true_work = fair_work;
+        if (i == (my_reducers - 1))
+            true_work += block_size % my_reducers;
+        // Subtract the zone processed by the previous reducer
+        true_work -= diff;
+        diff = 0;
+
+        // Continue until space
+        while(buff[offset + fair_work + diff - 1] != ' ' && (i + 1 != my_reducers))
+            diff++;
+        reducer_off[i] = true_work + diff;
+        offset += fair_work;
+    }
+
+
     number_as_chars(block_size, block_size_arg);
     number_as_chars(my_reducers, reducers_arg);
     args[0] = &block_size_arg[0];
@@ -123,13 +142,13 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
 
     // Send data to the reducers (consecutive chunks of the buffer)
-    fair_work = block_size / my_reducers;
+    offset = 0;
     for (i = 0; i < my_reducers; i++) {
-        true_work = fair_work;
-        if (i == (my_reducers - 1))
-            true_work += block_size % my_reducers;
-        printf("Mapper %d to %d work %d\n", rank, i, true_work);
-        MPI_Send(&buff[i * fair_work], true_work, MPI_CHAR, i, 1, reducercomm);
+        MPI_Send(&reducer_off[i], 1, MPI_INT, i, 1, reducercomm);
+
+        printf("Mapper %d to %d work %d\n", rank, i, reducer_off[i]);
+        MPI_Send(&buff[offset], reducer_off[i], MPI_CHAR, i, 1, reducercomm);
+        offset += reducer_off[i];
     }
 
     //TODO handle the hot areas
@@ -142,6 +161,7 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Type_commit(&mapType);
 
     // Wait for data from the reducers
+    offset = 0;
     for (i = 0; i < my_reducers; i++) {
         // Get the size of the map from the current reducer
         MPI_Recv(&map_size, 1, MPI_INT, i, 1, reducercomm, &status);
