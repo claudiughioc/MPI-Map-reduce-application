@@ -268,7 +268,7 @@ static int execute_master()
         offset += map_size;
     }
 
-    // Create and print the map
+    // Create the final map
     for (j = 0; j < offset; j++)
         stringCounts[final_map[j].word] += final_map[j].freq;
 

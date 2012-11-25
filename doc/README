@@ -1,0 +1,108 @@
+GHIOC CONSTANTIN CLAUDIU    341 C1
+Sisteme de programe pentru retele de calculatoare
+
+
+
+                        Tema 2 - Aplicatie Map/Reduce bazata pe MPI
+
+-------CUPRINS--------
+1. CERINTA
+2. UTILIZARE
+3. IMPLEMENTARE
+4. TESTARE
+5. CONTINUTUL ARHIVEI
+---------------------
+
+1. CERINTA
+    Realizaţi o aplicaţie de tip Map/Reduce bazată pe MPI. Concret, aplicatia va trebui sa numere cuvintele dintr-un text mare si sa prezinte pentru fiecare cuvant
+de cate ori apare, ordonat dupa frecventa.
+
+
+2. UTILIZARE
+    Pentru a rula aplicatia trebuie urmati urmatorii pasi:
+    *   in fisierul de configurare (denumit implicit "config" in calea curenta de lucru) trebuie specificati in aceasta oridine: numarul de procese "mapper",
+numarul de procese "reducer", fisierul de intrare si fisierul de iesire. Pentru a folosi un alt fisier de configurare, trebuie redenumit un macro in common.h:
+CONFIG_FILE
+    *   fisierul de instrare trebuie sa fie in directorul din care se ruleaza aplicatia
+    *   rulare makefile: make clean, make run
+
+3.  IMPLEMENTARE
+    
+    Procesul master a fost implementat in fisierul master.cpp. In main(), se verifica daca nu exista niciun proces parinte, caz in care se va executa procesul master. Pentru celalalt caz se executa procesul mapper. Cele doua situatii sunt implementate in functiile execute_master si execute_mapper. Masterul va citi fisierul de configurare, va salva datele si porneste un numar de procese mapper folosind MPI_Comm_spawn. Ii va trimite acestuia ca argumente numele fisierului de    intrare, numarul de procese mapper, numarul de procese reducer si dimensiunea fisierului. Apoi isi creaza un nou tip de date pentru a putea primi rezultatele de la mapper printr-un array de structuri map_entry (cuvant - frecventa). Pentru fiecare proces mapper create, master-ul asteapta sa primeasca dimensiunea vectorului de rezultate si vectorul in sine. Dupa primirea rezultatelor, el va crea un map final, in care va agrega toate rezultatele. Tot de la mapperi, acest proces primeste si cateva cuvinte care au fost la limita spatiului dedicat lor, si verifica daca trebuie eliminate din map unele cuvinte gresite si adaugate altele noi, care s-ar potrivi la limita zonelor.
+    La final procesul master ordoneaza map-ul descrescator dupa frecventa aparitiei cuvintelor si le afiseaza in fisierul de iesire.
+
+    Procesul mapper pornit de master incepe prin a-si salva argumentele primite de la parinte. Deschide fisierul de intrare folosind MPI_File_open si seteaza vizualizarea procesului asupra fisierului, in functie de zona dedicata lui. Ulterior, citeste zona din fisier intr-un buffer. Pentru a evita imparirea textului in mijlocul unor cuvinte, mapperii impart zona de lucru pentru reduceri, lungind spatiul initial (impartit in mod egal) pana la primul caracter special (spre dreapta).Urmatorul reducer va primi continuarea zonei, dupa primul caracter special. Dupa impartire mapperii creeaza procesele reducer si trimit lungimea zonelor si zonele catre acestia. In timp ce reducerii construiesc rezultatele, mapperii trateaza cazul cuvintelor impartite gresit de procesul master. Analizeaza capetele din stanga si din dreapta ale bufferului lor si construiesc doua structuri in care pun primul si ultimul cuvant. Aceste structuri vor di trimise la final catre master, care le va prelua si va modifica map-ul pentru a corecta erorile.
+    Pentru a primi rezultatele de la reduceri, procesele mapper creeaza un array de structuri map_entry in care vor primi asocieri de tip (cuvant - frecventa). Acest vector va fi trimis in final catre procesul master.
+
+    Procesele reducer primesc dimensiunea bufferului de prelucrat si bufferul in sine. Apeleaza functia build_hashtable care preia fiecare cuvant din text si il adauga intr-un map, crescandu-i in acelasi timp frecventa. Pentru a putea trimite continutul map-ului prin MPI catre procesele mapper, am creat o structura map_entry care va contine un cuvant si frecventa acestuia in textul primit. Map-ul este transformat intr-un array de aceste structuri si se creaza un MPI_Datatype pentru noua structura. Vectorul este trimis folosind acest nou tip de date.
+
+4.  TESTARE
+    Pentru testare conform indicatiilor din enunt am creat un script run.sh, care este inclus in in arhiva. Timp obtinuti pe masina locala (Ubuntu 12.04 cu MPICH2):
+
+        Running test with 2 mappers and 4 reducers:
+
+        real	0m0.621s
+        user	0m1.824s
+        sys	0m0.260s
+        Running test with 2 mappers and 6 reducers:
+
+        real	0m0.603s
+        user	0m1.884s
+        sys	0m0.256s
+        Running test with 2 mappers and 8 reducers:
+
+        real	0m0.578s
+        user	0m1.796s
+        sys	0m0.240s
+        Running test with 2 mappers and 10 reducers:
+
+        real	0m0.654s
+        user	0m2.012s
+        sys	0m0.320s
+        Running test with 3 mappers and 4 reducers:
+
+        real	0m0.902s
+        user	0m2.440s
+        sys	0m0.316s
+        Running test with 3 mappers and 6 reducers:
+
+        real	0m0.612s
+        user	0m1.976s
+        sys	0m0.336s
+        Running test with 3 mappers and 8 reducers:
+
+        real	0m0.644s
+        user	0m2.080s
+        sys	0m0.308s
+        Running test with 3 mappers and 10 reducers:
+
+        real	0m0.862s
+        user	0m2.608s
+        sys	0m0.640s
+        Running test with 4 mappers and 4 reducers:
+
+        real	0m0.581s
+        user	0m1.908s
+        sys	0m0.280s
+        Running test with 4 mappers and 6 reducers:
+
+        real	0m0.637s
+        user	0m2.028s
+        sys	0m0.376s
+        Running test with 4 mappers and 8 reducers:
+
+        real	0m0.772s
+        user	0m2.156s
+        sys	0m0.568s
+        Running test with 4 mappers and 10 reducers:
+
+        real	0m0.783s
+        user	0m2.360s
+        sys	0m0.596s
+
+5.  CONTINUTUL ARHIVEI:
+    *   fisierele sursa: "master.cpp", "reducer.cpp";
+    *   fisierul header "common.h";
+    *   fisierul de configurare "config"
+    *   fisierul "Makefile";
+    *   scriptul de testare "run.sh";
