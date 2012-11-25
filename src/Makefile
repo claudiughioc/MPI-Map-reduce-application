@@ -13,5 +13,5 @@ run: build
 	${EXEC} -np 1 ./master
 
 clean:
-	rm -fr master reducer
+	rm -fr $(MAPEXEC) $(REDEXEC)
 

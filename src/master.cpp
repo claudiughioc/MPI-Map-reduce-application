@@ -175,12 +175,41 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_Send(&map_size, 1, MPI_INT, 0, 1, parentcomm);
     MPI_Send(final_map, map_size, mapType, 0, 1, parentcomm);
 
-    // Send data to the master process
-    printf("Mapper %d sends STOP\n", rank);
-    MPI_Send(&debug, 1, MPI_INT, 0, 1, parentcomm);
-
     printf("Mapper %d / %d process dies\n", rank, size);
     return 0;
+}
+
+// Converts a string to lower case
+static void to_lower_case(const char *str, char *dest)
+{
+    int i = 0;
+    while(str[i]) {
+        dest[i] = tolower(str[i]);
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+static void format_and_print(map<string, int, cmp> table)
+{
+    unsigned int i;
+    char dest[WORD_MAX_SIZE];
+    printf("Master process prints the result\n");
+    std::vector<mypair> myvec(table.begin(), table.end());
+    std::sort(myvec.begin(), myvec.end(), IntCmp());
+    
+
+    // Open output file and write the results
+    FILE *fout = fopen(out_file, "w");
+    if (!fout) {
+        printf("Error opening output file\n");
+        return;
+    }
+    for (i = 0; i < myvec.size(); i++) {
+        to_lower_case(myvec[i].first.c_str(), dest);
+        fprintf(fout, "%s\t%d\n", dest, myvec[i].second);
+    }
+    fclose(fout);
 }
 
 // Executes the master process code
@@ -246,21 +275,8 @@ static int execute_master()
             stringCounts[result_maps[i][j].word] += result_maps[i][j].freq;
     }
 
-    // Create a final_map to summarize data from reducers
-    map_size = stringCounts.size();
-    final_map = (struct map_entry*)malloc(map_size * sizeof(struct map_entry));
-    i = 0;
-    for (iter = stringCounts.begin(); iter != stringCounts.end(); iter++) {
-        strcpy(final_map[i].word, iter->first.c_str());
-        final_map[i].word[iter->first.size()] = '\0';
-        final_map[i].freq = iter->second;
-        i++;
-    }
+    format_and_print(stringCounts);
 
-    for (i = 0; i < mappers; i++) {
-        MPI_Recv(&debug, 1, MPI_INT, i, 1, intercomm, &status);
-        printf("Process received STOP from mapper %d\n", i);
-    }
     printf("THE MASTER %d / %d process dies\n", rank, size);
     return 0;
 }

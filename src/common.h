@@ -3,10 +3,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
 #include <time.h>
 #include <string>
 #include <iostream>
 #include <map>
+#include <algorithm>
+#include <vector>
 using namespace std;
 
 #define CHAR_DELIMITERS     " \n`\t~!\r@#$%^&*()-_=+[{]}|;:',<.>/?\"\\"
@@ -28,5 +31,13 @@ MPI_Aint disper[2], ext;
 struct cmp : public std::binary_function<string, string, bool> {
     bool operator()(const string &lhs, const string &rhs) const {
         return strcasecmp(lhs.c_str(), rhs.c_str()) < 0 ? 1 : 0;
+    }
+};
+
+typedef std::pair<std::string, int> mypair;
+
+struct IntCmp {
+    bool operator()(const mypair &lhs, const mypair &rhs) {
+        return lhs.second > rhs.second;
     }
 };
