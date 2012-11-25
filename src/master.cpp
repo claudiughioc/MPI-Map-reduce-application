@@ -1,6 +1,6 @@
 #include "common.h"
 
-int *reducers, mappers, in_file_size;
+int reducers, mappers, in_file_size;
 char in_file[255], out_file[255];
 
 int debug;
@@ -24,8 +24,6 @@ static void number_as_chars(int num, char *dest) {
 // Reads the configuration file and initiates data
 static int init()
 {
-    int i;
-
     //Open the configuration file
     FILE *config = fopen(CONFIG_FILE, "r");
     if (config == NULL) {
@@ -35,13 +33,7 @@ static int init()
 
     // Save the number of mappers and reducers
     fscanf(config, "%d", &mappers);
-    reducers = (int *)malloc(mappers * sizeof(int));
-    if (reducers == NULL) {
-        printf("Error on alocating reducers\n");
-        return 1;
-    }
-    for (i = 0; i < mappers; i++)
-        fscanf(config,"%d", &reducers[i]);
+    fscanf(config, "%d", &reducers);
 
     // Save the input and output file names
     fscanf(config, "%s", in_file);
@@ -63,10 +55,8 @@ static int init()
 static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
 {
     int rank, size, block_size, *errcodes, my_reducers, diff;
-    int i, j, fair_work, true_work, map_size, offset = 0, *reducer_off;
+    int i, fair_work, true_work, map_size, offset = 0, *reducer_off;
     char *buff;
-    char **args = (char **)malloc(3 * sizeof(char *));
-    char reducers_arg[10], block_size_arg[10];
     struct map_entry final_map[MAXIMUM_SIZE];
     MPI_File mapper_file;
     MPI_Status status;
@@ -78,6 +68,9 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     strcpy(in_file, argv[1]);
     mappers = atoi(argv[2]);
     in_file_size = atoi(argv[3]);
+    my_reducers = atoi(argv[4]);
+    errcodes = (int *)malloc(my_reducers * sizeof(int));
+    reducer_off = (int *)malloc(my_reducers * sizeof(int));
 
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
@@ -105,11 +98,6 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
     MPI_File_read(mapper_file, buff, block_size, MPI_CHAR, &status);
     MPI_File_close(&mapper_file);
 
-    // Get the number of reducers to create
-    MPI_Recv(&my_reducers, 1, MPI_INT, 0, 1, parentcomm, &status); 
-    errcodes = (int *)malloc(my_reducers * sizeof(int));
-    reducer_off = (int *)malloc(my_reducers * sizeof(int));
-
     // Build reducer arguments
     // 0. The size of the buffer received by this mapper
     // 1. The total number of reducers for this mapper
@@ -130,16 +118,9 @@ static int execute_mapper(MPI_Comm parentcomm, int argc, char **argv)
         offset += fair_work;
     }
 
-
-    number_as_chars(block_size, block_size_arg);
-    number_as_chars(my_reducers, reducers_arg);
-    args[0] = &block_size_arg[0];
-    args[1] = &reducers_arg[0];
-    args[2] = NULL;
-
     // Create the reducers
     printf("Mapper %d before spawning, reducers: %d\n", rank, my_reducers);
-    MPI_Comm_spawn( "./reducer", args, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
+    MPI_Comm_spawn( "./reducer", MPI_ARGV_NULL, my_reducers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &reducercomm, errcodes);
 
     // Send data to the reducers (consecutive chunks of the buffer)
     offset = 0;
@@ -194,14 +175,16 @@ static void to_lower_case(const char *str, char *dest)
     dest[i] = '\0';
 }
 
+// Sorts the hashmap and prints it to the output file
 static void format_and_print(map<string, int, cmp> table)
 {
     unsigned int i;
     char dest[WORD_MAX_SIZE];
     printf("Master process prints the result\n");
     std::vector<mypair> myvec(table.begin(), table.end());
+
+    // Sort using a comparation function
     std::sort(myvec.begin(), myvec.end(), IntCmp());
-    
 
     // Open output file and write the results
     FILE *fout = fopen(out_file, "w");
@@ -222,7 +205,7 @@ static int execute_master()
     MPI_Comm intercomm;
     MPI_Status status;
     int rank, size, i, j, map_size, offset = 0;;
-    char bytes_arg[100], mappers_arg[2];
+    char bytes_arg[100], mappers_arg[2], reducers_arg[2];
     struct map_entry final_map[MAXIMUM_SIZE];
     map<string, int, cmp> stringCounts;
 
@@ -240,11 +223,13 @@ static int execute_master()
     //Some data (input file, mappers) will be sent as arguments
     number_as_chars(mappers, mappers_arg);
     number_as_chars(in_file_size, &bytes_arg[0]);
-    char **args = (char **) malloc(5 * sizeof(char *));
+    number_as_chars(reducers, reducers_arg);
+    char **args = (char **) malloc(6 * sizeof(char *));
     args[0] = in_file;
     args[1] = mappers_arg;
     args[2] = bytes_arg;
-    args[3] = NULL;
+    args[3] = reducers_arg;
+    args[4] = NULL;
 
     // Create the mappers processes
     MPI_Comm_spawn( "./master", args, mappers, MPI_INFO_NULL, 0, MPI_COMM_SELF, &intercomm, errcodes );
@@ -252,10 +237,6 @@ static int execute_master()
     MPI_Comm_rank(intercomm, &rank);
     MPI_Comm_size(intercomm, &size);
     printf("P rank si size in intercom %d %d\n", rank, size);
-
-    // Send the number of reducers for each mapper
-    for (i = 0; i < mappers; i++)
-        MPI_Send(&reducers[i], 1, MPI_INT, i, 1, intercomm);
 
     // Create the new datatype to receive the hashmap
     MPI_Type_extent(MPI_INT, &ext);

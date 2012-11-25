@@ -26,8 +26,7 @@ static void build_hashtable(char *buff, int size, map<string, int, cmp> &table)
 int main(int argc, char **argv)
 {
     MPI_Comm parentcomm;
-    int rank, size, i = 0, block_size, coworkers;
-    int my_size, map_bytes;
+    int rank, size, i = 0, my_size;
     long map_size;
     char *buff;
     MPI_Status status;
@@ -45,10 +44,6 @@ int main(int argc, char **argv)
     MPI_Comm_rank(parentcomm, &rank);
     MPI_Comm_size(parentcomm, &size);
     debug = rank;
-
-    //Save the arguments
-    block_size = atoi(argv[1]);
-    coworkers = atoi(argv[2]);
 
     //Calculate how much I have to process
     MPI_Recv(&my_size, 1, MPI_INT, 0, 1, parentcomm, &status);
